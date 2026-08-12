@@ -1,0 +1,7 @@
+# EBS Finance MCP server (Amazon Quick integration) — runtime deps only.
+# NOTE: do NOT add boto3 explicitly unless needed for size — the AgentCore base provides it;
+# keeping this minimal keeps the deploy artifact small. oracledb + mcp + boto3 are required
+# for DB access, the MCP protocol server, and Secrets Manager / S3 / Bedrock respectively.
+mcp>=1.0.0
+oracledb>=2.5.0
+boto3>=1.35.0

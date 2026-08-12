@@ -1,0 +1,33 @@
+# =============================================================================
+# AgentCore Runtime image (MCP protocol) — EBS Finance MCP server for Amazon Quick.
+#
+# Hosts mcp_server.py (FastMCP, streamable-HTTP) so Amazon Quick — and any MCP client —
+# can discover and invoke the solution's governed ERP tools. This is SEPARATE from the
+# agent image (Dockerfile): no SQLcl / JVM here, because the MCP server calls the audited
+# Oracle PL/SQL packages + collections Lambda + S3 inbox directly (no NL agent, no MCP
+# subprocess). Lighter and faster to cold-start.
+#
+# AgentCore Runtime with --protocol MCP expects the server at 0.0.0.0:8000/mcp over
+# streamable-HTTP. Build linux/arm64 (deploy.sh `quick-mcp` stage / agentcore CLI handle
+# this via CodeBuild — no local Docker needed).
+# =============================================================================
+FROM public.ecr.aws/docker/library/python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements-mcp.txt /app/requirements-mcp.txt
+RUN pip install --no-cache-dir -r /app/requirements-mcp.txt
+
+COPY mcp_server.py /app/
+COPY healthcheck_mcp.py /app/
+
+# Run as a non-root user (CKV_DOCKER_3).
+RUN useradd --create-home --uid 10001 mcpuser
+USER mcpuser
+
+EXPOSE 8000
+# Liveness check against the MCP streamable-HTTP endpoint (CKV_DOCKER_2).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["python", "/app/healthcheck_mcp.py"]
+# AgentCore MCP contract: streamable-HTTP server on :8000 at /mcp
+CMD ["python", "-u", "mcp_server.py"]

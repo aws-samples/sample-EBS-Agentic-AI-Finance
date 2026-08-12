@@ -1,0 +1,1382 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Oracle EBS Collections Agent (26ai Edition) - Infrastructure Stack
+  Stack Name: cash-flow-analytics-26ai
+  IMPORTANT: This is a SEPARATE stack from the original cash-flow-analytics deployment.
+  Do NOT modify or delete the original stack resources.
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        # W28: resources are given explicit names on purpose — the deploy scripts
+        # (deploy.sh, collections_agent/scripts/*) and the frontend runtime reference
+        # these Lambdas/roles/buckets/queue/table by fixed name. Losing the names would
+        # break those references, which matters more than in-place replaceability here.
+        - W28
+        # W11: the '*' resources that remain (bedrock:InvokeModel, EC2 ENI ops for VPC
+        # Lambdas, CloudWatch Logs create/put, ECR auth token) are not resource-scopable.
+        # Every scopable action IS scoped (secret/KMS/S3-prefix/Lambda ARNs). Same rationale
+        # as the per-role Checkov CKV_AWS_111 skips.
+        - W11
+        # W2001: VpcId is intentionally kept as a stable stack parameter — deploy.sh passes
+        # it as a --parameter-override, so removing it would break the deploy call. No
+        # resource references it directly (Lambdas use SubnetIds + SecurityGroupId).
+        - W2001
+        # W3037: cfn-lint's IAM action list is stale and doesn't recognise bedrock:Converse
+        # / bedrock:ConverseStream, which are valid current Bedrock actions the agent uses.
+        - W3037
+
+Parameters:
+  Environment:
+    Type: String
+    Default: '26ai'
+    AllowedValues: ['26ai']
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where EBS and Oracle 26ai DB reside
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs (minimum 2, different AZs)
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group allowing outbound to EBS app server and Oracle 26ai DB
+
+  EBSHost:
+    Type: String
+    Description: EBS Application Server private IP
+
+  EBSPort:
+    Type: String
+    Default: '8000'
+
+  OracleHost:
+    Type: String
+    Description: Oracle 26ai DB Node private IP
+
+  OraclePort:
+    Type: String
+    Default: '1521'
+
+  OracleService:
+    Type: String
+    Description: Oracle 26ai PDB service name
+
+  OracleSecretName:
+    Type: String
+    Default: 'oracle-26ai-collections-cred'
+
+  SelectAIProfile:
+    Type: String
+    Default: 'EBS_COLLECTIONS'
+
+  BedrockModelId:
+    Type: String
+    Default: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+
+  AgentRuntimeArn:
+    Type: String
+    Default: ''
+    Description: >
+      Bedrock AgentCore Runtime ARN that hosts the live chat agent (SQLcl MCP, Code
+      Interpreter). Left BLANK on purpose: the ARN does not exist until the 'agentcore'
+      deploy stage creates the runtime, which then sets AGENT_RUNTIME_ARN on the WebSocket
+      handler directly. While blank, the chat UI is unconfigured (there is no Lambda fallback).
+
+Resources:
+
+  # =========================================================================
+  # KMS — customer-managed key for encryption at rest (S3 inbox, DynamoDB, Lambda env)
+  # =========================================================================
+  # One CMK for the stack with automatic annual rotation. Key policy grants the account
+  # root full control (so IAM role policies govern usage) plus the AWS services that use
+  # the key on our behalf (S3, DynamoDB, Lambda env decryption, log delivery). Roles that
+  # touch encrypted resources are granted the specific kms actions in their inline policies.
+  StackKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: CMK for ebs-collections-26ai (S3 invoice inbox, DynamoDB, Lambda env vars)
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowServiceUse
+            Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+                - dynamodb.amazonaws.com
+                - lambda.amazonaws.com
+                - delivery.logs.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+              - 'kms:CreateGrant'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+            Condition:
+              ArnLike:
+                'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  StackKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/ebs-collections-26ai
+      TargetKeyId: !Ref StackKmsKey
+
+  # =========================================================================
+  # S3 Buckets
+  # =========================================================================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name required (CloudFront origin + deploy sync target).
+    Properties:
+      BucketName: !Sub 'ebs-analytics-frontend-26ai-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # SSE-S3 (AES256), NOT SSE-KMS: this bucket is a CloudFront Origin Access Identity
+      # origin, and SSE-KMS objects cannot be served through a legacy OAI (would need
+      # migration to Origin Access Control). AES256 is the correct at-rest posture here.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      # Server access logging → central logging bucket (audit best practice).
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: s3-frontend/
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+        - Key: Environment
+          Value: !Ref Environment
+
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    # checkov:skip=CKV_AWS_18:This IS the central server-access-log sink; a bucket cannot
+    # log to itself. Enabling access logging here would create a recursive log loop.
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # W35: same rationale as the Checkov CKV_AWS_18 skip above — this is the log
+            # destination bucket; it cannot log to itself.
+            - W35
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: >-
+              This is the central server-access-log destination bucket. A bucket cannot
+              log to itself; enabling access logging here would create a recursive loop.
+          - id: W28
+            reason: Explicit name required (fixed log-sink target referenced by other buckets).
+    Properties:
+      BucketName: !Sub 'ebs-analytics-logs-26ai-${AWS::AccountId}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # SSE-S3 (AES256): S3 server-access-log delivery + CloudFront logging do not support
+      # SSE-KMS on the destination bucket, so AES256 is required here (this is the log
+      # sink, not a data store). It is not self-logged (a bucket cannot log to itself).
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 90
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  # Deploy artifacts bucket (large Lambda zips, staged ONNX model, chart PNGs). Previously
+  # created imperatively by deploy.sh via `aws s3 mb` with no hardening — now managed here so
+  # it gets the same posture as every other bucket: SSE-KMS, public-access-block, versioning,
+  # access logging to the central sink, and an SSL-only policy (below).
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name required (deploy.sh uploads Lambda zips to a fixed name).
+    Properties:
+      BucketName: !Sub 'ebs-collections-26ai-artifacts-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref StackKmsKey
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: s3-artifacts/
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub '${ArtifactsBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontOAI
+            Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt FrontendBucket.Arn
+              - !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # SSL-only + log-delivery policy for the central logging bucket.
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowS3ServerAccessLogDelivery
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: 's3:PutObject'
+            Resource: !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt LoggingBucket.Arn
+              - !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # =========================================================================
+  # CloudFront
+  # =========================================================================
+  CloudFrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: 'OAI for ebs-collections-26ai frontend'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # W70: MinimumProtocolVersion is set to TLSv1.2_2021, but with the default
+            # CloudFront certificate AWS enforces its own security policy and ignores the
+            # field, so cfn-lint still flags it. A custom ACM cert (needs a real domain) is
+            # the only way to control it; not applicable to this demo on the *.cloudfront.net
+            # domain, which already negotiates TLS 1.2+.
+            - W70
+      cfn_nag:
+        rules_to_suppress:
+          - id: W70
+            reason: >-
+              Uses the default CloudFront certificate (no custom domain for this demo).
+              MinimumProtocolVersion TLSv1.2_2021 is set but AWS enforces its own policy
+              with the default cert; *.cloudfront.net already negotiates TLS 1.2+.
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+          ViewerProtocolPolicy: redirect-to-https
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        Logging:
+          Bucket: !GetAtt LoggingBucket.DomainName
+          Prefix: cloudfront/
+        # Use the default CloudFront certificate but pin a modern minimum TLS version
+        # (CKV_AWS_174). MinimumProtocolVersion only takes effect with the default cert
+        # when using the CloudFront domain; kept explicit so the scanner sees TLSv1.2+.
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1.2_2021
+        # Attach the WAFv2 WebACL (CKV_AWS_68). CLOUDFRONT-scope ACLs live in us-east-1,
+        # which is this stack's region.
+        WebACLId: !GetAtt FrontendWebACL.Arn
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  # WAFv2 WebACL for the CloudFront distribution (CKV_AWS_68). Uses the AWS-managed common
+  # rule set; CLOUDFRONT scope requires the ACL to be created in us-east-1.
+  FrontendWebACL:
+    Type: AWS::WAFv2::WebACL
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name for a stable, referenceable WebACL; intentional.
+    Properties:
+      Name: ebs-collections-26ai-cf-acl
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: ebs-collections-26ai-cf-acl
+      Rules:
+        - Name: AWSManagedCommon
+          Priority: 0
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: aws-common-rules
+        # Blocks Log4Shell (CVE-2021-44228) and similar payloads (CKV_AWS_192).
+        - Name: AWSManagedKnownBadInputs
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: aws-known-bad-inputs
+
+  # =========================================================================
+  # Cognito
+  # =========================================================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: ebs-collections-26ai-users
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: ebs-collections-26ai-client
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+
+  # -------------------------------------------------------------------------
+  # Amazon Quick MCP integration — OAuth service-to-service (client_credentials)
+  # -------------------------------------------------------------------------
+  # A Cognito domain + resource server (scope) + confidential app client so Amazon
+  # Quick can obtain a bearer token (client_credentials / 2LO) and call the EBS
+  # Finance MCP server hosted on AgentCore Runtime. AgentCore validates the JWT
+  # against this pool's OIDC discovery URL. The /oauth2/token endpoint only exists
+  # once a domain is created, and client_credentials requires at least one scope.
+  QuickAuthDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'ebs-finance-mcp-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  QuickMcpResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: ebs-finance-mcp
+      Name: EBS Finance MCP
+      Scopes:
+        - ScopeName: invoke
+          ScopeDescription: Invoke EBS Finance MCP tools
+
+  QuickMcpClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: QuickMcpResourceServer
+    Properties:
+      ClientName: ebs-finance-mcp-quick-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - ebs-finance-mcp/invoke
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # =========================================================================
+  # DynamoDB (WebSocket connections)
+  # =========================================================================
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name referenced by the WebSocket handler at runtime.
+    Properties:
+      TableName: websocket-connections-26ai
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      # Encryption at rest with the stack CMK + point-in-time recovery.
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref StackKmsKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  # =========================================================================
+  # API Gateway WebSocket
+  # =========================================================================
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: ebs-collections-26ai-ws
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  # Access-log destination for the WebSocket stage (W46).
+  WebSocketAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit log group name for a stable, discoverable access-log path.
+    Properties:
+      LogGroupName: /aws/apigateway/ebs-collections-26ai-ws
+      RetentionInDays: 90
+      # Encrypt log data with the stack CMK (CKV_AWS_158 / W84). The key policy already
+      # grants logs.<region>.amazonaws.com use of the key (AllowCloudWatchLogs statement).
+      KmsKeyId: !GetAtt StackKmsKey.Arn
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: prod
+      AutoDeploy: true
+      # Access logging to CloudWatch (W46). Note: for logs to actually be delivered, the
+      # account-level API Gateway CloudWatch Logs role must also be set (a global account
+      # setting outside this stack); the handler Lambda additionally emits its own logs.
+      AccessLogSettings:
+        DestinationArn: !GetAtt WebSocketAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","routeKey":"$context.routeKey","status":"$context.status"}'
+      # Throttling is applied here as a defense-in-depth control.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+  # =========================================================================
+  # Lambda - Collections Actions (26ai version)
+  # =========================================================================
+  CollectionsLambdaRole:
+    Type: AWS::IAM::Role
+    # checkov:skip=CKV_AWS_111:bedrock:InvokeModel (cross-region inference profiles) and
+    # CloudWatch Logs create/put are not resource-scopable in practice; SES is scoped to the
+    # account SES identity ARN and all data access is least-privilege (secret ARN, KMS key ARN).
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              bedrock:InvokeModel and CloudWatch Logs create/put require '*'; every
+              scopable action is scoped (SES identity ARN, secret ARN, KMS key ARN).
+          - id: W28
+            reason: >-
+              Explicit name referenced by deploy.sh and the runtime; intentional.
+    Properties:
+      RoleName: ebs-collections-26ai-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: CollectionsLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OracleSecretName}*'
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: '*'
+              # Scoped to SES identities in this account/region (CKV_AWS_111) rather than a
+              # bare '*'. Dunning/reminder mail is sent from a verified identity here.
+              - Effect: Allow
+                Action:
+                  - 'ses:SendEmail'
+                  - 'ses:SendRawEmail'
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
+              # Decrypt KMS-encrypted Lambda env vars (both this Lambda and ebs-p2p-26ai use this role).
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource: !GetAtt StackKmsKey.Arn
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+              # Send async invocation failures to the shared Lambda DLQ (CKV_AWS_116).
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                Resource: !GetAtt LambdaDLQ.Arn
+
+  # Shared dead-letter queue for async Lambda failures (CKV_AWS_116). One encrypted SQS
+  # queue backs every function's DeadLetterConfig; roles are granted sqs:SendMessage to it.
+  LambdaDLQ:
+    Type: AWS::SQS::Queue
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name referenced by deploy scripts/runtime; intentional.
+    Properties:
+      QueueName: ebs-collections-26ai-lambda-dlq
+      MessageRetentionPeriod: 1209600
+      # Encrypt with the stack CMK (CKV_AWS_27 / W48) rather than SQS-managed SSE.
+      KmsMasterKeyId: !Ref StackKmsKey
+      KmsDataKeyReusePeriodSeconds: 300
+
+  CollectionsLambda:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name invoked by other components/deploy scripts.
+    Properties:
+      FunctionName: ebs-collections-26ai
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CollectionsLambdaRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      ReservedConcurrentExecutions: 10
+      DeadLetterConfig:
+        TargetArn: !GetAtt LambdaDLQ.Arn
+      KmsKeyArn: !GetAtt StackKmsKey.Arn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {'statusCode': 200, 'body': json.dumps({'message': 'placeholder - deploy real code via deploy.sh lambda'})}
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      Environment:
+        Variables:
+          EBS_HOST: !Ref EBSHost
+          EBS_PORT: !Ref EBSPort
+          ORACLE_HOST: !Ref OracleHost
+          ORACLE_PORT: !Ref OraclePort
+          ORACLE_SERVICE: !Ref OracleService
+          ORACLE_SECRET_NAME: !Ref OracleSecretName
+          SELECT_AI_PROFILE: !Ref SelectAIProfile
+          AWS_REGION_NAME: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =========================================================================
+  # Lambda - P2P (AP Control Tower) read actions over XX_P2P_*_V views
+  # =========================================================================
+  P2PLambda:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name invoked by other components/deploy scripts.
+    Properties:
+      FunctionName: ebs-p2p-26ai
+      Runtime: python3.12
+      Handler: p2p_index.handler
+      Role: !GetAtt CollectionsLambdaRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      ReservedConcurrentExecutions: 10
+      DeadLetterConfig:
+        TargetArn: !GetAtt LambdaDLQ.Arn
+      KmsKeyArn: !GetAtt StackKmsKey.Arn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {'statusCode': 200, 'body': json.dumps({'message': 'placeholder - deploy real code via deploy.sh lambda'})}
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      Environment:
+        Variables:
+          ORACLE_HOST: !Ref OracleHost
+          ORACLE_PORT: !Ref OraclePort
+          ORACLE_SERVICE: !Ref OracleService
+          ORACLE_SECRET_NAME: !Ref OracleSecretName
+          AWS_REGION_NAME: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =========================================================================
+  # Lambda - P2P invoice extraction (ingest) + S3 inbox
+  # =========================================================================
+  P2PInboxBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: P2PExtractInvokePermission
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name required (presigned-upload target referenced by the app).
+    Properties:
+      BucketName: !Sub 'ebs-p2p-inbox-26ai-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # Sensitive invoice documents → SSE-KMS with the stack CMK (BucketKey reduces KMS cost).
+      # Roles that read/write here are granted kms:Decrypt/GenerateDataKey on the CMK.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref StackKmsKey
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: s3-inbox/
+      # Browser PUTs the invoice straight to S3 with a presigned URL → CORS must allow it.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt P2PExtractLambda.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: 'incoming/'
+
+  # SSL-only bucket policy for the invoice inbox (defense in depth).
+  P2PInboxBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref P2PInboxBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt P2PInboxBucket.Arn
+              - !Sub '${P2PInboxBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # Allow S3 to invoke the extraction Lambda when an invoice lands in the inbox.
+  P2PExtractInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt P2PExtractLambda.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !Sub 'arn:aws:s3:::ebs-p2p-inbox-26ai-${AWS::AccountId}'
+
+  P2PExtractRole:
+    Type: AWS::IAM::Role
+    # checkov:skip=CKV_AWS_111:bedrock:InvokeModel and CloudWatch Logs create/put require '*';
+    # data access (S3 inbox prefix, secret ARN, KMS key ARN) is least-privilege.
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              bedrock:InvokeModel and CloudWatch Logs create/put require '*'; other
+              access (S3 inbox prefix, secret ARN, KMS key ARN) is scoped.
+          - id: W28
+            reason: Explicit name referenced by deploy.sh; intentional.
+    Properties:
+      RoleName: ebs-p2p-26ai-extract-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: P2PExtractPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['bedrock:InvokeModel', 'bedrock:Converse']
+                Resource: '*'
+              - Effect: Allow
+                Action: ['textract:AnalyzeDocument', 'textract:AnalyzeExpense']
+                Resource: '*'
+              - Effect: Allow
+                Action: ['s3:GetObject']
+                Resource: !Sub 'arn:aws:s3:::ebs-p2p-inbox-26ai-${AWS::AccountId}/*'
+              - Effect: Allow
+                Action: 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OracleSecretName}*'
+              # Decrypt the KMS-encrypted invoice objects + this Lambda's env vars.
+              - Effect: Allow
+                Action: ['kms:Decrypt', 'kms:GenerateDataKey']
+                Resource: !GetAtt StackKmsKey.Arn
+              - Effect: Allow
+                Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents']
+                Resource: '*'
+              # Async invocation failures → shared Lambda DLQ (CKV_AWS_116).
+              - Effect: Allow
+                Action: ['sqs:SendMessage']
+                Resource: !GetAtt LambdaDLQ.Arn
+
+  P2PExtractLambda:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name (S3 notification target) referenced by deploy scripts.
+    Properties:
+      FunctionName: ebs-p2p-extract-26ai
+      Runtime: python3.12
+      Handler: p2p_extract.handler
+      Role: !GetAtt P2PExtractRole.Arn
+      Timeout: 120
+      MemorySize: 1024
+      ReservedConcurrentExecutions: 10
+      DeadLetterConfig:
+        TargetArn: !GetAtt LambdaDLQ.Arn
+      KmsKeyArn: !GetAtt StackKmsKey.Arn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {'statusCode': 200, 'body': json.dumps({'message': 'placeholder - deploy via deploy.sh lambda'})}
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      Environment:
+        Variables:
+          ORACLE_HOST: !Ref OracleHost
+          ORACLE_PORT: !Ref OraclePort
+          ORACLE_SERVICE: !Ref OracleService
+          ORACLE_SECRET_NAME: !Ref OracleSecretName
+          EXTRACT_MODEL: !Ref BedrockModelId
+          CONFIDENCE_THRESHOLD: '0.80'
+          DEFAULT_ORG_ID: '204'
+          AWS_REGION_NAME: !Ref AWS::Region
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =========================================================================
+  # Lambda - WebSocket Handler
+  # =========================================================================
+  WebSocketLambdaRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              execute-api:ManageConnections and CloudWatch Logs require '*'; DynamoDB,
+              Lambda, S3-prefix and KMS access are scoped to specific ARNs.
+          - id: W28
+            reason: Explicit name referenced by deploy.sh; intentional.
+    Properties:
+      RoleName: ebs-collections-26ai-ws-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      # VPC access so the WebSocket handler runs in the same private subnets as the
+      # other Lambdas (consistent network posture; can reach VPC endpoints/DB path).
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: WebSocketPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:Scan'
+                Resource: !GetAtt ConnectionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                Resource: !GetAtt CollectionsLambda.Arn
+              # Presigned uploads (PutObject) + presigned views (GetObject): the URL is
+              # signed with THIS role's creds, so the role must hold both on the inbox.
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::ebs-p2p-inbox-26ai-${AWS::AccountId}/incoming/*'
+              # DynamoDB + the inbox are KMS-encrypted, and the Lambda's env vars use the
+              # CMK — the role needs data-key access on the stack key.
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:GenerateDataKey'
+                Resource: !GetAtt StackKmsKey.Arn
+              # Async invocation failures → shared Lambda DLQ (CKV_AWS_116).
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                Resource: !GetAtt LambdaDLQ.Arn
+
+  # =========================================================================
+  # Lambda - WebSocket Handler (function + routes + integration)
+  # =========================================================================
+  WebSocketLambda:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Explicit name invoked by API Gateway integration/deploy scripts.
+    Properties:
+      FunctionName: ebs-collections-26ai-ws-handler
+      Runtime: python3.12
+      Handler: websocket_handler.handler
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Timeout: 130
+      MemorySize: 256
+      ReservedConcurrentExecutions: 10
+      DeadLetterConfig:
+        TargetArn: !GetAtt LambdaDLQ.Arn
+      # KMS-encrypted environment variables (CMK).
+      KmsKeyArn: !GetAtt StackKmsKey.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {'statusCode': 200}
+      # In the VPC + private subnets, matching every other Lambda in the stack.
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          COLLECTIONS_LAMBDA_NAME: !Ref CollectionsLambda
+          P2P_LAMBDA_NAME: !Ref P2PLambda
+          P2P_INBOX_BUCKET: !Sub 'ebs-p2p-inbox-26ai-${AWS::AccountId}'
+          # RBAC: verify the Cognito ID token at $connect and gate write actions by group.
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_APP_CLIENT_ID: !Ref UserPoolClient
+          AUTHZ_ENFORCE: '1'
+          # Live chat runs on the AgentCore Runtime (container host + SQLcl MCP + Code
+          # Interpreter). Set by the 'agentcore' deploy stage; the chat UI requires it.
+          AGENT_RUNTIME_ARN: !Ref AgentRuntimeArn
+      Tags:
+        - Key: Project
+          Value: ebs-collections-26ai
+
+  WebSocketLambdaInvokeAgentPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ws-invoke-agent
+      Roles:
+        - !Ref WebSocketLambdaRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'lambda:InvokeFunction'
+            Resource:
+              - !GetAtt CollectionsLambda.Arn
+              - !GetAtt P2PLambda.Arn
+          # Invoke the AgentCore Runtime that hosts the live chat agent (see AgentRuntimeArn).
+          - Effect: Allow
+            Action: 'bedrock-agentcore:InvokeAgentRuntime'
+            # Account/region-scoped to all AgentCore runtimes: the specific ARN isn't known
+            # at infra time (created later by the 'agentcore' stage), and an empty !Ref would
+            # produce an invalid resource. The '*' matches the runtime id and its sub-paths.
+            Resource:
+              - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*'
+
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketLambda.Arn}/invocations'
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$connect'
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$disconnect'
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  SendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: 'sendMessage'
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketLambda
+      Action: 'lambda:InvokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # =========================================================================
+  # AgentCore IAM Role
+  # =========================================================================
+  AgentCoreRole:
+    Type: AWS::IAM::Role
+    # checkov:skip=CKV_AWS_111:bedrock invoke, ECR auth token, EC2 ENI (VPC networking) and
+    # CloudWatch Logs create/put require '*'; other resources are scoped to specific ARNs.
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              bedrock invoke, ECR auth token, EC2 ENI (VPC networking) and CloudWatch Logs
+              require '*'; other resources are scoped to specific ARNs.
+          - id: W28
+            reason: Explicit name referenced by deploy.sh; intentional.
+    Properties:
+      RoleName: ebs-collections-26ai-agentcore-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # AgentCore Runtime assumes this role as the bedrock-agentcore service principal
+          # (NOT bedrock.amazonaws.com) — CreateAgentRuntime fails role validation otherwise.
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+      Policies:
+        - PolicyName: AgentCorePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OracleSecretName}*'
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                Resource: !GetAtt CollectionsLambda.Arn
+              # Pull the agent container image from its ECR repo (CodeBuild pushes it here).
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchCheckLayerAvailability'
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/bedrock-agentcore-ebs_collections_agent_26ai'
+              # AgentCore workload-identity tokens + Code Interpreter (generate_chart tool).
+              - Effect: Allow
+                Action:
+                  - 'bedrock-agentcore:GetWorkloadAccessToken'
+                  - 'bedrock-agentcore:GetWorkloadAccessTokenForJWT'
+                  - 'bedrock-agentcore:GetWorkloadAccessTokenForUserId'
+                  - 'bedrock-agentcore:StartCodeInterpreterSession'
+                  - 'bedrock-agentcore:InvokeCodeInterpreter'
+                  - 'bedrock-agentcore:StopCodeInterpreterSession'
+                  - 'bedrock-agentcore:GetCodeInterpreterSession'
+                  - 'bedrock-agentcore:ListCodeInterpreterSessions'
+                Resource: '*'
+              # VPC ENIs so the runtime can reach the private Oracle DB on 1521.
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:AssignPrivateIpAddresses'
+                  - 'ec2:UnassignPrivateIpAddresses'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+
+  # =========================================================================
+  # AgentCore MCP execution role (EBS Finance MCP server for Amazon Quick)
+  # =========================================================================
+  # Assumed by AgentCore Runtime to run the MCP server container. Same shape as the
+  # agent role (pull the image, reach the DB secret + S3 inbox + Bedrock, attach VPC
+  # ENIs to reach the private Oracle DB on 1521) but scoped to the MCP server's needs.
+  QuickMcpRuntimeRole:
+    Type: AWS::IAM::Role
+    # checkov:skip=CKV_AWS_111:bedrock invoke, ECR auth token, EC2 ENI (VPC networking) and
+    # CloudWatch Logs require '*'; other resources (ECR repo ARN, secret ARN, S3 prefix, KMS)
+    # are least-privilege.
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              bedrock invoke, ECR auth token, EC2 ENI (VPC networking) and CloudWatch Logs
+              require '*'; other resources (ECR repo ARN, secret ARN, S3 prefix, KMS) scoped.
+          - id: W28
+            reason: Explicit name referenced by deploy.sh; intentional.
+    Properties:
+      RoleName: ebs-finance-mcp-26ai-runtime-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+      Policies:
+        - PolicyName: QuickMcpRuntimePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OracleSecretName}*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${P2PInboxBucket}/incoming/*'
+              # The inbox is SSE-KMS → PutObject needs GenerateDataKey on the stack CMK.
+              - Effect: Allow
+                Action:
+                  - 'kms:GenerateDataKey'
+                  - 'kms:Decrypt'
+                Resource: !GetAtt StackKmsKey.Arn
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchCheckLayerAvailability'
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/ebs-finance-mcp-26ai'
+              - Effect: Allow
+                Action:
+                  - 'bedrock-agentcore:GetWorkloadAccessToken'
+                  - 'bedrock-agentcore:GetWorkloadAccessTokenForJWT'
+                  - 'bedrock-agentcore:GetWorkloadAccessTokenForUserId'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:AssignPrivateIpAddresses'
+                  - 'ec2:UnassignPrivateIpAddresses'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+
+Outputs:
+  CloudFrontURL:
+    Description: Frontend URL
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+  WebSocketURL:
+    Description: WebSocket API endpoint
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+
+  CollectionsLambdaArn:
+    Description: Collections Lambda ARN
+    Value: !GetAtt CollectionsLambda.Arn
+
+  CollectionsLambdaName:
+    Description: Collections Lambda function name
+    Value: !Ref CollectionsLambda
+
+  P2PLambdaName:
+    Description: P2P (AP Control Tower) Lambda function name
+    Value: !Ref P2PLambda
+
+  P2PExtractLambdaName:
+    Description: P2P invoice extraction (ingest) Lambda function name
+    Value: !Ref P2PExtractLambda
+
+  P2PInboxBucketName:
+    Description: S3 inbox bucket for invoice ingest
+    Value: !Ref P2PInboxBucket
+
+  WebSocketLambdaName:
+    Description: WebSocket handler Lambda function name
+    Value: !Ref WebSocketLambda
+
+  AgentCoreRoleArn:
+    Description: AgentCore execution role ARN
+    Value: !GetAtt AgentCoreRole.Arn
+
+  FrontendBucketName:
+    Description: S3 bucket for frontend
+    Value: !Ref FrontendBucket
+
+  ArtifactsBucketName:
+    Description: S3 bucket for deploy artifacts (Lambda zips, staged model, charts)
+    Value: !Ref ArtifactsBucket
+
+  QuickMcpRuntimeRoleArn:
+    Description: Execution role ARN for the EBS Finance MCP server (AgentCore Runtime)
+    Value: !GetAtt QuickMcpRuntimeRole.Arn
+
+  QuickMcpClientId:
+    Description: Cognito app client ID for Amazon Quick MCP service auth (client_credentials)
+    Value: !Ref QuickMcpClient
+
+  QuickMcpTokenUrl:
+    Description: OAuth token endpoint for Amazon Quick MCP service auth
+    Value: !Sub 'https://ebs-finance-mcp-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com/oauth2/token'
+
+  QuickMcpScope:
+    Description: OAuth scope Amazon Quick must request for the MCP integration
+    Value: 'ebs-finance-mcp/invoke'
+
+  QuickMcpDiscoveryUrl:
+    Description: Cognito OIDC discovery URL AgentCore uses to validate the MCP bearer token
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/openid-configuration'
+
+  ConnectionsTableName:
+    Description: DynamoDB connections table
+    Value: !Ref ConnectionsTable
+
+  StackKmsKeyArn:
+    Description: Customer-managed KMS key ARN (S3 inbox, DynamoDB, Lambda env vars)
+    Value: !GetAtt StackKmsKey.Arn
+
+  StackName:
+    Description: This stack name (for reference)
+    Value: !Ref AWS::StackName

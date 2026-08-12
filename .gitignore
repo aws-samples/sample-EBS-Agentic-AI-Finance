@@ -1,0 +1,76 @@
+# =============================================================================
+# .gitignore — keep secrets, credentials, artifacts, and scratch out of the repo.
+# Security-reviewed: nothing under tmp/, no credentials, no build output.
+# (No inline comments after patterns — git treats them as part of the pattern.)
+# =============================================================================
+
+# --- Secrets & credentials (NEVER commit) ---
+# deploy-config.json has real hosts + passwords; use deploy-config.example.json.
+deploy-config.json
+*.env
+.env
+.env.*
+# aws-config.js is generated at deploy from stack outputs.
+aws-config.js
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+*secret*.json
+*cred*.json
+*credential*.json
+*keys*.json
+bedrock-keys.json
+bedrock-policy.json
+
+# --- Scratch / working dir (SSM payloads, cred dumps, b64 blobs) ---
+tmp/
+scratch/
+*.b64
+*.log
+
+# --- AgentCore local state (account-specific ARNs / ids) ---
+.bedrock_agentcore.yaml
+.bedrock_agentcore/
+
+# --- Node / frontend build ---
+node_modules/
+frontend/build/
+build/
+dist/
+coverage/
+npm-debug.log*
+yarn-error.log*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Packaging / zips / binaries ---
+*.zip
+*.tgz
+*.tar.gz
+*.onnx
+
+# --- OS / IDE ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- Docs build noise (regenerable binaries; keep the .md/.svg sources) ---
+~$*.docx
+*.pptx
+
+# --- Internal working artifacts (NOT for publication) ---
+# PROGRESS.md is an internal build log (scattered clone creds, host IPs); steering is
+# internal agent config. .docx are regenerable binaries. Keep the repo to source + the
+# sanitized .md deliverables.
+PROGRESS.md
+.kiro/
+*.docx

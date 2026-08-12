@@ -1,0 +1,8 @@
+# Semgrep path ignores for this repo.
+#
+# Build output, dependencies and generated assets — never scan.
+frontend/build/
+frontend/node_modules/
+node_modules/
+tmp/
+*.min.js

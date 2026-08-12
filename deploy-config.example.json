@@ -1,0 +1,103 @@
+{
+  "__README": "TEMPLATE — copy this file to deploy-config.json (which is gitignored) and replace every <...> placeholder with a value from YOUR environment. JSON has no comment syntax, so each section carries an '__example_*' key showing the SHAPE of the expected value; delete the '__example_*' keys (and this __README) in your real deploy-config.json if you prefer, they are ignored by the deploy. NEVER commit deploy-config.json — it contains account details, hosts, and passwords used during deployment.",
+  "__SECURITY": "SENSITIVE FILE — deploy-config.json contains plaintext passwords. Restrict access, do not copy it into logs/tickets/build artifacts, and securely delete it when it is no longer required. Some demo deployment scripts pass database credentials through SQL*Plus and SSM command strings; before production, replace this mechanism with organization-approved secret storage and rotation, such as AWS Secrets Manager.",
+
+  "aws_region": "us-east-1",
+  "aws_account_id": "<AWS_ACCOUNT_ID>",
+  "__example_aws_account_id": "123456789012",
+  "stack_name": "cash-flow-analytics-26ai",
+  "resource_prefix": "26ai",
+
+  "rbac": {
+    "__comment": "Required password for the non-production Cognito demo users created by the rbac stage. Choose a unique value that meets the Cognito user-pool password policy; do not reuse a production password.",
+    "demo_password": "<SET_ME_COGNITO_DEMO_PASSWORD>"
+  },
+
+  "oracle_26ai": {
+    "host": "<DB_PRIVATE_IP>",
+    "__example_host": "10.0.1.13",
+    "port": 1521,
+    "service_name": "<DB_SERVICE_NAME>",
+    "__example_service_name": "ebs_ERPUAT",
+    "pdb_name": "<PDB_NAME>",
+    "__example_pdb_name": "ERPUAT",
+    "cdb_name": "<CDB_NAME>",
+    "__example_cdb_name": "CERPUAT",
+    "db_user": "COLLECTIONS_AI",
+    "db_password": "<SET_ME_DB_PASSWORD>",
+    "secret_name": "oracle-26ai-collections-cred",
+    "select_ai_profile": "EBS_COLLECTIONS",
+    "vector_table": "COLLECTIONS_KNOWLEDGE_BASE",
+    "ords_url": "http://<DB_PRIVATE_IP>:8080/ords/",
+    "__example_ords_url": "http://10.0.1.13:8080/ords/",
+    "app_instance_id": "<APP_EC2_INSTANCE_ID>",
+    "__example_app_instance_id": "i-0abc123def4567890",
+    "db_instance_id": "<DB_EC2_INSTANCE_ID>",
+    "__example_db_instance_id": "i-0def456abc1237890"
+  },
+
+  "oracle_ebs": {
+    "host": "<EBS_APP_PRIVATE_IP>",
+    "__example_host": "10.0.1.194",
+    "port": 8000,
+    "isg_oafm_port": 7601,
+    "apps_user": "APPS",
+    "apps_password": "<SET_ME_APPS_PASSWORD>",
+    "ebs_system_password": "<SET_ME_EBS_SYSTEM_PASSWORD>",
+    "weblogic_password": "<SET_ME_WEBLOGIC_PASSWORD>",
+    "secret_name": "oracle-26ai-collections-cred"
+  },
+
+  "bedrock": {
+    "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "embedding_model_id": "amazon.titan-embed-text-v2:0",
+    "onnx_model": "all_MiniLM_L12_v2",
+    "onnx_s3_uri": "s3://<YOUR_ONNX_BUCKET>/onnx/all_MiniLM_L12_v2.onnx",
+    "__example_onnx_s3_uri": "s3://ebs-collections-26ai-artifacts-123456789012/onnx/all_MiniLM_L12_v2.onnx",
+    "region": "us-east-1"
+  },
+
+  "email": {
+    "__comment": "SES sender must be a verified identity (domain or address). In SES sandbox the recipient must also be verified; demo_recipient is used when a customer has no email on file.",
+    "ses_sender": "<VERIFIED_SES_SENDER>",
+    "__example_ses_sender": "collections@your-verified-domain.com",
+    "demo_recipient": "<VERIFIED_DEMO_RECIPIENT>",
+    "__example_demo_recipient": "you@your-verified-domain.com",
+    "ses_region": "us-east-1"
+  },
+
+  "__comment_chart_bucket": "S3 bucket for rendered chart PNGs; the agent returns a presigned URL (keeps WebSocket replies under API Gateway's 128KB frame limit). Reuses the agent artifacts bucket.",
+  "chart_bucket": "<CHART_S3_BUCKET>",
+  "__example_chart_bucket": "ebs-collections-26ai-artifacts-123456789012",
+
+  "agentcore": {
+    "agent_name": "ebs-collections-agent-26ai",
+    "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "execution_role": "",
+    "code_interpreter": true
+  },
+  "__comment_agentcore_memory": "AgentCore Memory is NOT configured here — the 'agentcore' deploy stage creates (or reuses) it automatically and wires it into the runtime as AGENTCORE_MEMORY_ID.",
+
+  "lambda": {
+    "function_name": "ebs-collections-26ai",
+    "runtime": "python3.12",
+    "timeout": 60,
+    "memory_size": 512
+  },
+
+  "vpc": {
+    "vpc_id": "<VPC_ID>",
+    "__example_vpc_id": "vpc-0123456789abcdef0",
+    "subnet_ids": "<PRIVATE_SUBNET_ID_1>,<PRIVATE_SUBNET_ID_2>",
+    "__example_subnet_ids": "subnet-0aaa111,subnet-0bbb222",
+    "security_group_id": "<SECURITY_GROUP_ID>",
+    "__example_security_group_id": "sg-0123456789abcdef0"
+  },
+
+  "frontend": {
+    "s3_bucket": "<FRONTEND_S3_BUCKET>",
+    "__example_s3_bucket": "ebs-analytics-frontend-26ai-123456789012",
+    "logging_bucket": "<LOGGING_S3_BUCKET>",
+    "__example_logging_bucket": "ebs-analytics-logs-26ai-123456789012"
+  }
+}

@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="940" viewBox="0 0 1500 940" font-family="Helvetica,Arial,sans-serif">
+  <rect width="1500" height="940" fill="#eef1f4"/>
+
+  <!-- ===== APP SCREEN (matches the real Policy library) ===== -->
+  <g>
+    <!-- top bar -->
+    <rect x="20" y="20" width="1020" height="30" fill="#232f3e"/>
+    <text x="30" y="40" fill="#fff" font-size="12" font-weight="bold">EBS Finance Assistant <tspan fill="#ff9900">26ai</tspan></text>
+    <text x="185" y="40" fill="#9fb0c0" font-size="11">Overview</text>
+    <text x="245" y="40" fill="#9fb0c0" font-size="11">Collections</text>
+    <text x="325" y="40" fill="#9fb0c0" font-size="11">AP Control Tower</text>
+    <rect x="440" y="26" width="52" height="18" rx="3" fill="#34465d"/>
+    <text x="448" y="40" fill="#fff" font-size="11">Policy</text>
+    <text x="905" y="36" fill="#fff" font-size="9" font-weight="bold" text-anchor="end">Simon Cunningham</text>
+    <text x="905" y="47" fill="#ff9900" font-size="8" text-anchor="end">AR + AP Manager</text>
+    <text x="1005" y="40" fill="#cdd6df" font-size="9">Sign out</text>
+
+    <!-- title -->
+    <text x="30" y="72" fill="#232f3e" font-size="16" font-weight="bold">Policy library</text>
+    <text x="30" y="88" fill="#687078" font-size="9">The operating policies, SOPs and letter templates the assistant reasons over — read from the live Oracle 26ai knowledge base.</text>
+
+    <!-- info note -->
+    <rect x="20" y="98" width="1020" height="30" fill="#eef4fb" stroke="#cfe0f3"/>
+    <text x="30" y="112" fill="#34506b" font-size="8">Note: EBS enforces the numeric rules (Payables invoice tolerances, hold codes, dunning configuration). These documents are the human-readable policy that</text>
+    <text x="30" y="123" fill="#34506b" font-size="8">explains and governs those rules; where a value is enforced in EBS it is called out in the text.</text>
+    <circle cx="1024" cy="113" r="7" fill="#4b74a8"/><text x="1024" y="116" fill="#fff" font-size="8" text-anchor="middle" font-weight="bold">i</text>
+
+    <!-- reconciliation panel -->
+    <rect x="20" y="136" width="1020" height="118" fill="#fff" stroke="#e2e7ec"/>
+    <text x="30" y="158" fill="#232f3e" font-size="12" font-weight="bold">Policy vs. live EBS enforcement <tspan fill="#98a2ac" font-size="8">— price-variance tolerance</tspan></text>
+    <rect x="330" y="147" width="66" height="15" rx="7" fill="#e7f6ee" stroke="#b6e2c8"/><text x="363" y="158" fill="#1a7a45" font-size="8" text-anchor="middle">all in sync</text>
+    <!-- Sync button -->
+    <rect x="948" y="145" width="82" height="22" rx="4" fill="#0972d3"/>
+    <text x="989" y="160" fill="#fff" font-size="9" text-anchor="middle" font-weight="bold">Sync from EBS</text>
+    <text x="30" y="176" fill="#687078" font-size="7.5">The written policy of record is 10%. The table shows what Payables actually enforces for your operating unit (live from EBS). In sync means the document</text>
+    <text x="30" y="187" fill="#687078" font-size="7.5">matches the system; DRIFT means they differ. Sync from EBS updates the documented policy in this app to match what Payables enforces — it never changes EBS.</text>
+    <line x1="30" y1="196" x2="1030" y2="196" stroke="#eef1f4"/>
+    <text x="30" y="210" fill="#8a939c" font-size="8" font-weight="bold">Operating unit</text>
+    <text x="290" y="210" fill="#8a939c" font-size="8" font-weight="bold">Policy %</text>
+    <text x="520" y="210" fill="#8a939c" font-size="8" font-weight="bold">EBS enforces %</text>
+    <text x="760" y="210" fill="#8a939c" font-size="8" font-weight="bold">Status</text>
+    <line x1="30" y1="216" x2="1030" y2="216" stroke="#eef1f4"/>
+    <text x="30" y="232" fill="#4a5560" font-size="9">Vision Operations</text>
+    <text x="290" y="232" fill="#4a5560" font-size="9">10%</text>
+    <text x="520" y="232" fill="#4a5560" font-size="9">10%</text>
+    <rect x="760" y="224" width="48" height="14" rx="7" fill="#1a9e5c"/><text x="784" y="234" fill="#fff" font-size="8" text-anchor="middle">in sync</text>
+
+    <!-- doc list (left) -->
+    <rect x="20" y="262" width="250" height="268" fill="#fff" stroke="#e2e7ec"/>
+    <text x="30" y="280" fill="#8a939c" font-size="8" font-weight="bold">POLICY</text>
+    <text x="30" y="296" fill="#1f2d3a" font-size="9" font-weight="bold">Credit hold policy for accounts overdue</text>
+    <text x="30" y="307" fill="#1f2d3a" font-size="9" font-weight="bold">over 60 days</text>
+    <text x="30" y="318" fill="#98a2ac" font-size="7">source: AR_COLLECTIONS_POLICY_v3.pdf</text>
+    <text x="30" y="336" fill="#1f2d3a" font-size="9" font-weight="bold">Dunning letter escalation levels and timing</text>
+    <text x="30" y="347" fill="#98a2ac" font-size="7">source: AR_COLLECTIONS_POLICY_v3.pdf</text>
+    <rect x="26" y="356" width="238" height="34" rx="4" fill="#e3eefb" stroke="#7fb0e6"/>
+    <text x="34" y="370" fill="#1f2d3a" font-size="9" font-weight="bold">Payment plan authorization limits and</text>
+    <text x="34" y="381" fill="#1f2d3a" font-size="9" font-weight="bold">requirements</text>
+    <text x="30" y="410" fill="#8a939c" font-size="8" font-weight="bold">SOP</text>
+    <text x="30" y="426" fill="#1f2d3a" font-size="9" font-weight="bold">Standard procedure for disputed invoices</text>
+    <text x="30" y="450" fill="#1f2d3a" font-size="9" font-weight="bold">Procedure for new customer first late payment</text>
+    <text x="30" y="474" fill="#1f2d3a" font-size="9" font-weight="bold">Procedure for setting up a customer payment plan</text>
+    <text x="30" y="502" fill="#8a939c" font-size="8" font-weight="bold">TEMPLATE</text>
+    <text x="30" y="518" fill="#1f2d3a" font-size="9" font-weight="bold">Level 1 dunning letter template friendly tone</text>
+
+    <!-- doc reader (centre) -->
+    <rect x="280" y="262" width="520" height="268" fill="#fff" stroke="#e2e7ec"/>
+    <rect x="292" y="274" width="44" height="15" rx="7" fill="#5b6b7a"/><text x="314" y="285" fill="#fff" font-size="8" text-anchor="middle">Policy</text>
+    <text x="292" y="308" fill="#232f3e" font-size="13" font-weight="bold">Payment plan authorization limits and requirements</text>
+    <text x="292" y="324" fill="#98a2ac" font-size="8">Source: AR_COLLECTIONS_POLICY_v3.pdf · Last updated 2026-07-10 17:29</text>
+    <text x="292" y="348" fill="#1f2d3a" font-size="9" font-weight="bold">Payment Plan Authorization</text>
+    <text x="292" y="366" fill="#2b343d" font-size="9" font-weight="bold">Authorization limits:</text>
+    <text x="304" y="382" fill="#2b343d" font-size="9">• Collections manager: up to $50,000 over 6 months - no approval needed.</text>
+    <text x="304" y="396" fill="#2b343d" font-size="9">• Over $50,000 or 6 months: director approval.</text>
+    <text x="304" y="410" fill="#2b343d" font-size="9">• Over $200,000 or 12 months: VP Finance approval.</text>
+    <text x="292" y="432" fill="#2b343d" font-size="9" font-weight="bold">Every payment plan must include:</text>
+    <text x="304" y="448" fill="#2b343d" font-size="9">• An agreed installment schedule</text>
+    <text x="304" y="462" fill="#2b343d" font-size="9">• Late-payment penalty of 1.5% monthly</text>
+    <text x="304" y="476" fill="#2b343d" font-size="9">• Automatic credit hold if 2 consecutive payments are missed</text>
+
+    <!-- AI assistant panel (right) -->
+    <rect x="810" y="262" width="230" height="268" fill="#fff" stroke="#e2e7ec"/>
+    <rect x="810" y="262" width="230" height="22" fill="#eef2f6"/>
+    <rect x="818" y="267" width="11" height="11" rx="2" fill="#ff9900"/>
+    <text x="835" y="277" fill="#232f3e" font-size="10" font-weight="bold">AI Assistant</text>
+    <circle cx="1028" cy="273" r="4" fill="#1a9e5c"/>
+    <rect x="820" y="294" width="210" height="60" rx="6" fill="#f0f3f7"/>
+    <text x="828" y="309" fill="#2b343d" font-size="8">Hi Simon — I'm your finance</text>
+    <text x="828" y="321" fill="#2b343d" font-size="8">assistant. Ask about receivables,</text>
+    <text x="828" y="333" fill="#2b343d" font-size="8">payables, or request an action.</text>
+    <text x="828" y="345" fill="#2b343d" font-size="8">Actions run through audited EBS APIs.</text>
+    <rect x="828" y="458" width="202" height="16" rx="4" fill="#f4f6f8" stroke="#e2e7ec"/>
+    <text x="836" y="469" fill="#4a5560" font-size="7.5">What is our policy for placing a customer on credit hold?</text>
+    <rect x="828" y="478" width="202" height="16" rx="4" fill="#f4f6f8" stroke="#e2e7ec"/>
+    <text x="836" y="489" fill="#4a5560" font-size="7.5">Which customers are most likely to pay late?</text>
+  </g>
+
+  <!-- screen border -->
+  <rect x="20" y="20" width="1020" height="510" fill="none" stroke="#c9d3db" stroke-width="1.5"/>
+  <text x="20" y="548" fill="#98a2ac" font-size="9" font-style="italic">Policy library — Oracle 26ai (the policy of record the agent cites, checked live against EBS)</text>
+
+  <!-- =================== CALLOUTS =================== -->
+  <g>
+    <!-- A: drift check -->
+    <rect x="1060" y="136" width="420" height="86" rx="8" fill="#fff" stroke="#ff9900" stroke-width="1.5"/>
+    <circle cx="1080" cy="156" r="11" fill="#ff9900"/><text x="1080" y="161" fill="#fff" font-size="12" text-anchor="middle" font-weight="bold">A</text>
+    <text x="1098" y="156" fill="#8a5000" font-size="12" font-weight="bold">Drift check — policy vs. what EBS enforces</text>
+    <text x="1098" y="174" fill="#3a4653" font-size="10">Compares the written policy of record (10%) against the price</text>
+    <text x="1098" y="188" fill="#3a4653" font-size="10">tolerance Payables actually enforces, live from EBS config. If they</text>
+    <text x="1098" y="202" fill="#3a4653" font-size="10">differ it flags DRIFT — catching the trap where a SharePoint doc</text>
+    <text x="1098" y="216" fill="#8a939c" font-size="9">quietly disagrees with the system. Here: 10% = 10% → in sync.</text>
+    <path d="M1060 165 L810 200" stroke="#ff9900" stroke-width="1.5" fill="none" marker-end="url(#o)"/>
+
+    <!-- B: Sync from EBS button -->
+    <rect x="1060" y="230" width="420" height="86" rx="8" fill="#fff" stroke="#0972d3" stroke-width="1.5"/>
+    <circle cx="1080" cy="250" r="11" fill="#0972d3"/><text x="1080" y="255" fill="#fff" font-size="12" text-anchor="middle" font-weight="bold">B</text>
+    <text x="1098" y="250" fill="#0a4b8c" font-size="12" font-weight="bold">"Sync from EBS" — one-click reconcile</text>
+    <text x="1098" y="268" fill="#3a4653" font-size="10">If drift is found, an AP manager clicks this to update the app's</text>
+    <text x="1098" y="282" fill="#3a4653" font-size="10">documented policy to match what Payables enforces. It writes ONLY</text>
+    <text x="1098" y="296" fill="#3a4653" font-size="10">the app's policy value — never EBS config. EBS stays the system of</text>
+    <text x="1098" y="310" fill="#8a939c" font-size="9">record. Role-gated to AP managers; the acting user is audited.</text>
+    <path d="M1060 250 L1032 156" stroke="#0972d3" stroke-width="1.5" fill="none" marker-end="url(#b)"/>
+
+    <!-- C: doc library / policy of record -->
+    <rect x="1060" y="324" width="420" height="82" rx="8" fill="#fff" stroke="#1a8a4a" stroke-width="1.5"/>
+    <circle cx="1080" cy="344" r="11" fill="#1a8a4a"/><text x="1080" y="349" fill="#fff" font-size="12" text-anchor="middle" font-weight="bold">C</text>
+    <text x="1098" y="344" fill="#146c3f" font-size="12" font-weight="bold">Policy of record — what the agent cites</text>
+    <text x="1098" y="362" fill="#3a4653" font-size="10">The policies and SOPs, read from the SAME knowledge base the</text>
+    <text x="1098" y="376" fill="#3a4653" font-size="10">agent reasons over. When the assistant says "within policy", click a</text>
+    <text x="1098" y="390" fill="#3a4653" font-size="10">document and read the exact source — the "why" and "who approves".</text>
+    <text x="1098" y="404" fill="#8a939c" font-size="9">EBS holds the enforced numbers; the narrative lives here.</text>
+    <path d="M1060 360 L270 320" stroke="#1a8a4a" stroke-width="1.5" fill="none" marker-end="url(#g)"/>
+
+    <!-- D: templates in EBS -->
+    <rect x="1060" y="414" width="420" height="102" rx="8" fill="#fff" stroke="#8c4fff" stroke-width="1.5"/>
+    <circle cx="1080" cy="434" r="11" fill="#8c4fff"/><text x="1080" y="439" fill="#fff" font-size="12" text-anchor="middle" font-weight="bold">D</text>
+    <text x="1098" y="434" fill="#5b2ea6" font-size="12" font-weight="bold">Templates — the enforced rules in EBS</text>
+    <text x="1098" y="452" fill="#3a4653" font-size="10">In E-Business Suite a "tolerance template" is a named set of limits</text>
+    <text x="1098" y="466" fill="#3a4653" font-size="10">(e.g. allow invoice price up to 10% over the PO) attached to an</text>
+    <text x="1098" y="480" fill="#3a4653" font-size="10">operating unit. Payables uses it to auto-decide whether to hold an</text>
+    <text x="1098" y="494" fill="#3a4653" font-size="10">invoice. The "TEMPLATE" docs here (dunning letters) are the wording</text>
+    <text x="1098" y="508" fill="#8a939c" font-size="9">the app sends; the drift check reads the EBS tolerance template.</text>
+    <path d="M1060 470 L270 512" stroke="#8c4fff" stroke-width="1.5" fill="none" marker-end="url(#p)"/>
+  </g>
+
+  <defs>
+    <marker id="b" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0972d3"/></marker>
+    <marker id="o" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#ff9900"/></marker>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#1a8a4a"/></marker>
+    <marker id="p" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#8c4fff"/></marker>
+  </defs>
+</svg>

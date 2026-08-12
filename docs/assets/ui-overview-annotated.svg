@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" font-family="Helvetica,Arial,sans-serif">
+  <rect width="1280" height="800" fill="#f4f6f8"/>
+  <!-- top bar -->
+  <rect x="0" y="0" width="1280" height="48" fill="#232f3e"/>
+  <text x="24" y="30" fill="#fff" font-size="16" font-weight="bold">EBS Finance Assistant <tspan fill="#ff9900">26ai</tspan></text>
+  <text x="300" y="30" fill="#dfe6ee" font-size="14" font-weight="bold">Overview</text>
+  <text x="400" y="30" fill="#9fb0c0" font-size="14">Collections</text>
+  <text x="520" y="30" fill="#9fb0c0" font-size="14">AP Control Tower</text>
+  <text x="690" y="30" fill="#9fb0c0" font-size="14">Policy</text>
+  <text x="1120" y="30" fill="#dfe6ee" font-size="13">Simon Cunningham</text>
+
+  <!-- title -->
+  <text x="40" y="86" fill="#232f3e" font-size="22" font-weight="bold">Working-Capital Overview</text>
+  <text x="40" y="108" fill="#687078" font-size="13">Live Oracle E-Business Suite (AR + AP) — one pane for the whole cash cycle</text>
+
+  <!-- cash in / cash out -->
+  <rect x="40" y="128" width="360" height="96" rx="10" fill="#147a45"/>
+  <text x="60" y="156" fill="#bfe8d0" font-size="12">CASH IN · Receivables</text>
+  <text x="60" y="190" fill="#fff" font-size="30" font-weight="bold">$957.9M</text>
+  <text x="60" y="212" fill="#bfe8d0" font-size="11">overdue across top risk accounts</text>
+
+  <rect x="430" y="128" width="360" height="96" rx="10" fill="#c0392b"/>
+  <text x="450" y="156" fill="#f3c5bd" font-size="12">CASH OUT · Payables</text>
+  <text x="450" y="190" fill="#fff" font-size="30" font-weight="bold">$2.35B</text>
+  <text x="450" y="212" fill="#f3c5bd" font-size="11">blocked value · 2,131 invoices on hold</text>
+
+  <!-- KPI strip -->
+  <rect x="40" y="240" width="180" height="70" rx="8" fill="#fff" stroke="#e6ebf0"/>
+  <text x="52" y="262" fill="#687078" font-size="10">Overdue receivables</text>
+  <text x="52" y="288" fill="#232f3e" font-size="19" font-weight="bold">$957.9M</text>
+  <rect x="230" y="240" width="180" height="70" rx="8" fill="#fff" stroke="#e6ebf0"/>
+  <text x="242" y="262" fill="#687078" font-size="10">Blocked payables</text>
+  <text x="242" y="288" fill="#232f3e" font-size="19" font-weight="bold">$2.35B</text>
+  <rect x="420" y="240" width="180" height="70" rx="8" fill="#fff" stroke="#e6ebf0"/>
+  <text x="432" y="262" fill="#687078" font-size="10">Invoices on hold</text>
+  <text x="432" y="288" fill="#232f3e" font-size="19" font-weight="bold">2,131</text>
+  <rect x="610" y="240" width="180" height="70" rx="8" fill="#fff" stroke="#e6ebf0"/>
+  <text x="622" y="262" fill="#687078" font-size="10">Awaiting approval</text>
+  <text x="622" y="288" fill="#232f3e" font-size="19" font-weight="bold">179</text>
+
+  <!-- action plan card -->
+  <rect x="40" y="326" width="750" height="150" rx="10" fill="#fff" stroke="#e6ebf0"/>
+  <text x="56" y="352" fill="#232f3e" font-size="14" font-weight="bold">Recommended action plan</text>
+  <text x="56" y="378" fill="#4a5560" font-size="11">1  AR  General Technologies   $368.6M   dunning level 2   [within policy]   Act with AI</text>
+  <text x="56" y="400" fill="#4a5560" font-size="11">2  AR  Hilman and Associates  $289.3M   dunning level 2   [within policy]   Act with AI</text>
+  <text x="56" y="422" fill="#4a5560" font-size="11">3  AP  American Telephone...  $167.5M   release ap hold  [within policy]   Act with AI</text>
+  <text x="56" y="444" fill="#4a5560" font-size="11">4  AP  American Telephone...  $145.3M   release ap hold  [within policy]   Act with AI</text>
+
+  <!-- what-if -->
+  <rect x="40" y="492" width="750" height="70" rx="10" fill="#fff" stroke="#e6ebf0"/>
+  <text x="56" y="520" fill="#232f3e" font-size="13" font-weight="bold">Working-capital what-if</text>
+  <text x="56" y="540" fill="#687078" font-size="11">project collecting top 10 overdue + releasing in-tolerance holds</text>
+  <rect x="640" y="508" width="130" height="34" rx="6" fill="#8c4fff"/>
+  <text x="705" y="530" fill="#fff" font-size="12" text-anchor="middle">Run simulation</text>
+
+  <!-- AI dock -->
+  <rect x="820" y="60" width="420" height="700" rx="10" fill="#fff" stroke="#d7dee5"/>
+  <rect x="820" y="60" width="420" height="40" rx="10" fill="#eef2f6"/>
+  <text x="840" y="86" fill="#232f3e" font-size="14" font-weight="bold">AI Assistant</text>
+  <circle cx="1210" cy="80" r="6" fill="#1a9e5c"/>
+  <rect x="840" y="120" width="360" height="70" rx="10" fill="#f0f3f7"/>
+  <text x="855" y="145" fill="#2b343d" font-size="11">Hi Simon — ask about receivables,</text>
+  <text x="855" y="163" fill="#2b343d" font-size="11">payables, or request an action. Actions</text>
+  <text x="855" y="181" fill="#2b343d" font-size="11">run through audited EBS APIs.</text>
+  <rect x="960" y="210" width="240" height="46" rx="10" fill="#ff9900"/>
+  <text x="975" y="238" fill="#fff" font-size="11">Draw a bar chart of blocked payables…</text>
+  <rect x="840" y="276" width="360" height="150" rx="10" fill="#f0f3f7"/>
+  <rect x="856" y="292" width="328" height="118" rx="4" fill="#fff" stroke="#dfe6ee"/>
+  <rect x="880" y="330" width="30" height="60" fill="#d13212"/>
+  <rect x="925" y="350" width="30" height="40" fill="#ff9900"/>
+  <rect x="970" y="360" width="30" height="30" fill="#e07b00"/>
+  <text x="1010" y="378" fill="#687078" font-size="10">inline chart</text>
+  <rect x="840" y="712" width="300" height="36" rx="8" fill="#fff" stroke="#c9d3db"/>
+  <text x="855" y="735" fill="#98a2ac" font-size="11">Ask about AR/AP, or request an action…</text>
+  <rect x="1150" y="712" width="70" height="36" rx="8" fill="#ff9900"/>
+  <text x="1185" y="735" fill="#fff" font-size="12" text-anchor="middle">Send</text>
+
+  <!-- ============ CALLOUTS ============ -->
+  <g font-size="13" font-weight="bold">
+    <!-- 1 cash balance -->
+    <rect x="150" y="600" width="330" height="52" rx="8" fill="#fff3e0" stroke="#ff9900"/>
+    <circle cx="168" cy="616" r="11" fill="#ff9900"/><text x="168" y="621" fill="#fff" text-anchor="middle">1</text>
+    <text x="188" y="614" fill="#8a5000" font-size="12">Cash-IN vs Cash-OUT: the whole</text>
+    <text x="188" y="632" fill="#8a5000" font-size="12">working-capital cycle at a glance.</text>
+    <text x="188" y="648" fill="#8a5000" font-size="11">Click a tile to drill into AR / AP.</text>
+    <path d="M300 600 L300 226" stroke="#ff9900" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+
+    <!-- 2 action plan -->
+    <rect x="500" y="600" width="300" height="52" rx="8" fill="#e7f6ee" stroke="#1a9e5c"/>
+    <circle cx="518" cy="616" r="11" fill="#1a9e5c"/><text x="518" y="621" fill="#fff" text-anchor="middle">2</text>
+    <text x="538" y="614" fill="#146c3f" font-size="12">Agent-ranked next moves (AR+AP),</text>
+    <text x="538" y="632" fill="#146c3f" font-size="12">each tagged within-policy. "Act with AI"</text>
+    <text x="538" y="648" fill="#146c3f" font-size="11">hands the move to the assistant (gated).</text>
+    <path d="M600 600 L600 478" stroke="#1a9e5c" stroke-width="2" fill="none" marker-end="url(#gr)"/>
+
+    <!-- 3 assistant dock -->
+    <rect x="900" y="470" width="330" height="72" rx="8" fill="#efe7fb" stroke="#8c4fff"/>
+    <circle cx="918" cy="486" r="11" fill="#8c4fff"/><text x="918" y="491" fill="#fff" text-anchor="middle">3</text>
+    <text x="938" y="484" fill="#5b2ea6" font-size="12">Docked AI Assistant on every screen.</text>
+    <text x="938" y="502" fill="#5b2ea6" font-size="12">NL analytics, policy RAG, charts, and</text>
+    <text x="938" y="520" fill="#5b2ea6" font-size="12">audited write-back. Remembers context</text>
+    <text x="938" y="536" fill="#5b2ea6" font-size="11">across turns (AgentCore Memory).</text>
+    <path d="M1000 470 L1010 432" stroke="#8c4fff" stroke-width="2" fill="none" marker-end="url(#pr)"/>
+  </g>
+
+  <defs>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#ff9900"/></marker>
+    <marker id="gr" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#1a9e5c"/></marker>
+    <marker id="pr" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#8c4fff"/></marker>
+  </defs>
+</svg>

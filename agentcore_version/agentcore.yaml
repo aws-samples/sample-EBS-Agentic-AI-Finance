@@ -1,0 +1,40 @@
+agent:
+  name: ebs-collections-agent-26ai
+  description: "Oracle EBS AR Collections Agent — 26ai. NL->SQL via Bedrock over live EBS AR views, in-DB ONNX vector KB, ISG REST write-back, AgentCore Code Interpreter for charts."
+  entry_point: agent_strands.py
+  runtime: python3.12
+
+model:
+  provider: bedrock
+  model_id: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  region: us-east-1
+
+tools:
+  - execute_oracle_ai_query      # NL->SQL via boto3 Bedrock, executed on Oracle 26ai (oracledb)
+  - execute_collections_action   # ISG REST write-back (10 actions) to EBS public APIs
+  - search_knowledge_base        # in-DB ONNX AI Vector Search (xx_kb_search_pkg)
+  - generate_chart               # AgentCore Code Interpreter (matplotlib/pandas)
+
+# AgentCore Code Interpreter (chart/analysis generation) — part of the solution design
+code_interpreter:
+  enabled: true
+
+environment:
+  ORACLE_HOST: ${ORACLE_HOST}
+  ORACLE_PORT: ${ORACLE_PORT}
+  ORACLE_SERVICE: ${ORACLE_SERVICE}
+  ORACLE_SECRET_NAME: ${ORACLE_SECRET_NAME}
+  EBS_HOST: ${EBS_HOST}
+  EBS_PORT: ${EBS_PORT}
+  SELECT_AI_PROFILE: ${SELECT_AI_PROFILE}
+  MODEL_ID: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  USE_IN_DB_SELECT_AI: "0"
+  AWS_REGION: us-east-1
+  # SQLcl 25.2+ MCP server as a governed SQL tool provider (customer-managed MCP path
+  # for the non-Autonomous DB). 1 = agent spawns `sql -mcp` locally over stdio and
+  # attaches its tools. Requires the container image (Dockerfile.sqlcl-mcp /
+  # deploy.sh agent-mcp). 0 = built-in tools only (default zip deploy).
+  USE_SQLCL_MCP: "0"
+  SQLCL_HOME: /opt/sqlcl
+  SQLCL_USER_HOME: /tmp/sqlcl-cfg
+  SQLCL_CONN: EBS_COLLECTIONS
