@@ -1,19 +1,5 @@
 # EBS Agentic AI — Finance (Oracle 26ai)
 
-> ## ⚠️ Not production-ready — demonstration / prototype only
->
-> **This repository is a demonstration and prototype. It is NOT production-ready software and
-> is NOT intended for deployment in a live environment or use by real end users.** It has **not**
-> undergone an AWS security review or application security assessment, and it is provided **as-is,
-> with no warranty** of security, reliability, or fitness for any purpose.
->
-> The security controls, scanner suppressions, and hardening described below (KMS, WAF, VPC,
-> IAM scoping, etc.) are illustrative of good practice for demo purposes; they have **not** been
-> validated to a production bar. Before any production use you must conduct your own independent
-> security review, threat modeling, and testing, and adapt the configuration (secrets, network
-> boundaries, IAM least-privilege, data handling, logging/retention, and compliance controls) to
-> your environment and requirements. Use it against **non-production, test/clone data only.**
-
 AI-powered Accounts Receivable **and** Accounts Payable assistant for Oracle E-Business Suite,
 built on Oracle Database 26ai (SELECT AI, AI Vector Search) + Amazon Bedrock / Strands on
 AgentCore Runtime. One "single pane of glass" React UI over the working-capital cycle:
